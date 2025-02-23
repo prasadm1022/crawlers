@@ -42,18 +42,18 @@ RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 WEB_PAGE_URL = os.getenv("WEB_PAGE_URL")
 POST_SELECTOR = os.getenv("POST_SELECTOR")
 
-# Known Posts File
-KNOWN_POSTS_FILE = os.getenv("KNOWN_POSTS_FILE")
+# Known Posts CSV File (as an alternative, "SQLite" database can be used)
+KNOWN_POSTS_CSV_FILE = os.getenv("KNOWN_POSTS_CSV_FILE")
 
 
 def get_known_posts():
     """
     Read known posts from a CSV file.
     """
-    if not os.path.exists(KNOWN_POSTS_FILE):
+    if not os.path.exists(KNOWN_POSTS_CSV_FILE):
         return set()
 
-    with open(KNOWN_POSTS_FILE, newline='', encoding="utf-8") as file:
+    with open(KNOWN_POSTS_CSV_FILE, newline='', encoding="utf-8") as file:
         reader = csv.reader(file)
         return set(row[0] for row in reader)  # Assuming first column stores post titles
 
@@ -62,7 +62,7 @@ def save_new_posts(new_posts):
     """
     Append new posts to the CSV file.
     """
-    with open(KNOWN_POSTS_FILE, "a", newline='', encoding="utf-8") as file:
+    with open(KNOWN_POSTS_CSV_FILE, "a", newline='', encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerows(new_posts)
 
