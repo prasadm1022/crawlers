@@ -14,23 +14,24 @@
 
 import csv
 import os
-import requests
 import smtplib
 import ssl
 import schedule
 import time
 
-# HTML/XML parsing related imports
-from bs4 import BeautifulSoup
-
 # Email generation related imports
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# Selenium imports
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+
 # If using python-dotenv
 from dotenv import load_dotenv
 
-# Load environment variables from the .env file if presents
+# Load environment variables from the .env file
 load_dotenv()
 
 # Email Configuration
@@ -45,19 +46,42 @@ POST_SELECTOR = os.getenv("POST_SELECTOR")
 # Known Posts CSV File (as an alternative, "SQLite" database can be used)
 KNOWN_POSTS_CSV_FILE = os.getenv("KNOWN_POSTS_CSV_FILE")
 
-# Headers to mimic a real browser
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://riyasewana.com/",
-    "Accept-Language": "en-US,en;q=0.9",
-    "Accept-Encoding": "gzip, deflate, br"
-}
+
+def setup_driver():
+    """
+    Set up the Selenium WebDriver with popup blocking.
+    """
+    print("Setup selenium driver...")
+
+    chrome_options = Options()
+
+    chrome_options.add_argument("--headless")  # Run without opening a window
+    chrome_options.add_argument("--disable-popup-blocking")  # Block popups
+    chrome_options.add_argument("--disable-notifications")  # Block notifications
+    chrome_options.add_argument("--disable-javascript")  # Optional: Disable JavaScript if not needed
+    chrome_options.add_argument("--no-sandbox")  # Avoid issues in some environments
+    chrome_options.add_argument("--disable-dev-shm-usage")  # Prevent crashes in Docker/Linux
+
+    # Block JavaScript, images, popups, and ads
+    prefs = {
+        "profile.default_content_setting_values": {
+            "images": 2,  # Disable images
+            "javascript": 2,  # Disable JavaScript
+            "popups": 2,  # Block popups
+            "ads": 2  # Block ads (Chrome experimental feature)
+        }
+    }
+    chrome_options.add_experimental_option("prefs", prefs)
+
+    return webdriver.Chrome(options=chrome_options)
 
 
 def get_known_posts():
     """
     Read known posts from a CSV file.
     """
+    print("Load old data from csv...")
+
     if not os.path.exists(KNOWN_POSTS_CSV_FILE):
         return set()
 
@@ -70,6 +94,8 @@ def save_new_posts(new_posts):
     """
     Append new posts to the CSV file.
     """
+    print("Save new data to csv...")
+
     with open(KNOWN_POSTS_CSV_FILE, "a", newline='', encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerows(new_posts)
@@ -77,62 +103,56 @@ def save_new_posts(new_posts):
 
 def check_new_posts():
     """
-    Fetch webpage, check for new posts, compare with Google Sheet, and send alerts.
+    Fetch webpage using Selenium, check for new posts, and send alerts.
     """
     print("Checking for new posts...")
 
     try:
-        # 1. Fetch the page
-        response = requests.get(WEB_PAGE_URL, headers=HEADERS)
-        response.raise_for_status()  # Raise an error for bad status
-        response.encoding = response.apparent_encoding  # Let requests guess the correct encoding
-        response_text = response.text  # Use requests' built-in decoding
-    except Exception as e:
-        print(f"Error fetching the page: {e}")
-        return
+        # Initialize WebDriver
+        driver = setup_driver()
 
-    # 2. Parse the HTML
-    soup = BeautifulSoup(response_text, 'html.parser')
+        # Open the page
+        driver.get(WEB_PAGE_URL)
+        # time.sleep(5)  # Allow time for JavaScript content to load
 
-    # 3. Extract posts
-    #    (Depending on the page structure, you’ll need to customize these selectors)
-    #    each post is within a container <div class="example-div">,
-    #    and each div has a link <a> with a href or text that identifies it uniquely.
-    posts = soup.select(POST_SELECTOR)
+        # Extract posts using Selenium
+        posts = driver.find_elements(By.CLASS_NAME, POST_SELECTOR)
 
-    if not posts:
-        print("No posts found or the HTML structure may have changed.")
-        return
+        if not posts:
+            print("No posts found or the structure may have changed...")
+            return
 
-    known_posts = get_known_posts()
-    new_posts_found = []
+        known_posts = get_known_posts()
+        new_posts_found = []
 
-    for post in posts:
-        # Get post title & post url
-        link_tag = post.find('a')
-        if link_tag:
-            post_title = link_tag.get_text(strip=True)
-            post_link = link_tag.get('href')
+        for post in posts:
+            link_tag = post.find_element(By.TAG_NAME, "a")
+            post_title = link_tag.text.strip()
+            post_link = link_tag.get_attribute("href")
 
-            # Create a unique identifier (could be the combination of title + link)
-            unique_id = (post_title + (post_link or '')).strip()
-
+            unique_id = post_link.strip()
             if unique_id not in known_posts:
-                new_posts_found.append((post_title, post_link))
+                new_posts_found.append((unique_id, post_title))
 
-    # If we have new posts, send an email
-    if new_posts_found:
-        print(f"Found {len(new_posts_found)} new post(s). Sending email alert...")
-        save_new_posts(new_posts_found)  # Save to Google Sheets
-        send_email_alert(new_posts_found)
-    else:
-        print("No new posts at this time.")
+        if new_posts_found:
+            print(f"Found {len(new_posts_found)} new post(s)")
+            save_new_posts(new_posts_found)
+            send_email_alert(new_posts_found)
+        else:
+            print("No new posts at this time")
+
+    except Exception as e:
+        print(f"Error during crawling: {e}")
+    finally:
+        driver.quit()  # Ensure the browser is closed
 
 
 def send_email_alert(new_posts):
     """
     Sends an email with the list of new posts.
     """
+    print("Sending email alert...")
+
     message = MIMEMultipart("alternative")
     message["Subject"] = "New Civic FD1 Posts Detected"
     message["From"] = SENDER_EMAIL
@@ -140,10 +160,8 @@ def send_email_alert(new_posts):
 
     # Create the HTML body for the email
     html_body = "<h3>New posts found on riyasewana.com</h3><ul>"
-    for title, link in new_posts:
-        # If link is relative, you might need to prepend the domain: "https://riyasewana.com" + link
-        full_link = link if link.startswith("http") else "https://riyasewana.com" + link
-        html_body += f"<li><a href='{full_link}'>{title}</a></li>"
+    for link, title in new_posts:
+        html_body += f"<li><a href='{link}'>{title}</a></li>"
     html_body += "</ul>"
 
     part = MIMEText(html_body, "html")
