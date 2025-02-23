@@ -18,13 +18,19 @@ import smtplib
 import ssl
 import schedule
 import time
+
+# HTML/XML parsing related imports
+from bs4 import BeautifulSoup
+
+# Email generation related imports
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from bs4 import BeautifulSoup
+
+# If using python-dotenv
 from dotenv import load_dotenv
 
-# Global variable to store known post IDs or titles
-known_posts = set()
+# Load environment variables from the .env file if presents
+load_dotenv()
 
 # Email Configuration
 SENDER_EMAIL = os.getenv("SENDER_EMAIL", "default_sender")
@@ -34,9 +40,6 @@ RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL", "default_receiver")
 # Crawler Settings
 WEB_PAGE_URL = os.getenv("WEB_PAGE_URL", "default_website")
 POST_SELECTOR = os.getenv("POST_SELECTOR", "default_selector")
-
-# Load environment variables from the .env file
-load_dotenv()  # By default, it looks for a file named ".env" in the current directory
 
 
 def check_new_posts():
