@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import csv
 import os
 import requests
 import smtplib
@@ -33,18 +34,42 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Email Configuration
-SENDER_EMAIL = os.getenv("SENDER_EMAIL", "default_sender")
-SENDER_PASSWORD = os.getenv("SENDER_PASSWORD", "default_password")  # Use app-specific password if using Gmail
-RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL", "default_receiver")
+SENDER_EMAIL = os.getenv("SENDER_EMAIL")
+SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")  # Use app-specific password if using Gmail
+RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 
 # Crawler Settings
-WEB_PAGE_URL = os.getenv("WEB_PAGE_URL", "default_website")
-POST_SELECTOR = os.getenv("POST_SELECTOR", "default_selector")
+WEB_PAGE_URL = os.getenv("WEB_PAGE_URL")
+POST_SELECTOR = os.getenv("POST_SELECTOR")
+
+# Known Posts File
+KNOWN_POSTS_FILE = os.getenv("KNOWN_POSTS_FILE")
+
+
+def get_known_posts():
+    """
+    Read known posts from a CSV file.
+    """
+    if not os.path.exists(KNOWN_POSTS_FILE):
+        return set()
+
+    with open(KNOWN_POSTS_FILE, newline='', encoding="utf-8") as file:
+        reader = csv.reader(file)
+        return set(row[0] for row in reader)  # Assuming first column stores post titles
+
+
+def save_new_posts(new_posts):
+    """
+    Append new posts to the CSV file.
+    """
+    with open(KNOWN_POSTS_FILE, "a", newline='', encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerows(new_posts)
 
 
 def check_new_posts():
     """
-    Fetch the webpage, parse for posts, compare with known posts, and send alerts if any are new.
+    Fetch webpage, check for new posts, compare with Google Sheet, and send alerts.
     """
     print("Checking for new posts...")
 
@@ -69,10 +94,11 @@ def check_new_posts():
         print("No posts found or the HTML structure may have changed.")
         return
 
+    known_posts = get_known_posts()
     new_posts_found = []
 
     for post in posts:
-        # Example: get a post title or unique ID
+        # Get post title & post url
         link_tag = post.find('a')
         if link_tag:
             post_title = link_tag.get_text(strip=True)
@@ -82,12 +108,12 @@ def check_new_posts():
             unique_id = (post_title + (post_link or '')).strip()
 
             if unique_id not in known_posts:
-                known_posts.add(unique_id)
                 new_posts_found.append((post_title, post_link))
 
     # If we have new posts, send an email
     if new_posts_found:
         print(f"Found {len(new_posts_found)} new post(s). Sending email alert...")
+        save_new_posts(new_posts_found)  # Save to Google Sheets
         send_email_alert(new_posts_found)
     else:
         print("No new posts at this time.")
