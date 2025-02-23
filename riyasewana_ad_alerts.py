@@ -45,6 +45,14 @@ POST_SELECTOR = os.getenv("POST_SELECTOR")
 # Known Posts CSV File (as an alternative, "SQLite" database can be used)
 KNOWN_POSTS_CSV_FILE = os.getenv("KNOWN_POSTS_CSV_FILE")
 
+# Headers to mimic a real browser
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Referer": "https://riyasewana.com/",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Accept-Encoding": "gzip, deflate, br"
+}
+
 
 def get_known_posts():
     """
@@ -75,14 +83,16 @@ def check_new_posts():
 
     try:
         # 1. Fetch the page
-        response = requests.get(WEB_PAGE_URL)
+        response = requests.get(WEB_PAGE_URL, headers=HEADERS)
         response.raise_for_status()  # Raise an error for bad status
+        response.encoding = response.apparent_encoding  # Let requests guess the correct encoding
+        response_text = response.text  # Use requests' built-in decoding
     except Exception as e:
         print(f"Error fetching the page: {e}")
         return
 
     # 2. Parse the HTML
-    soup = BeautifulSoup(response.text, 'html.parser')
+    soup = BeautifulSoup(response_text, 'html.parser')
 
     # 3. Extract posts
     #    (Depending on the page structure, you’ll need to customize these selectors)
