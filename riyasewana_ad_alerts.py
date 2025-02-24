@@ -41,6 +41,7 @@ RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 
 # Crawler Settings
 WEB_PAGE_URLS = os.getenv("WEB_PAGE_URL").split(",")
+WEB_PAGE_URL_SUBJECTS = os.getenv("WEB_PAGE_URL_SUBJECT").split(",")
 POST_SELECTOR = os.getenv("POST_SELECTOR")
 
 # Known Posts CSV File (as an alternative, "SQLite" database can be used)
@@ -111,7 +112,7 @@ def check_new_posts():
     driver = setup_driver()
 
     try:
-        for url in WEB_PAGE_URLS:
+        for index, url in enumerate(WEB_PAGE_URLS):
             print(f"Checking website: {url}")
 
             # Open the page
@@ -140,7 +141,7 @@ def check_new_posts():
             if new_posts_found:
                 print(f"Found {len(new_posts_found)} new post(s)")
                 save_new_posts(new_posts_found)
-                send_email_alert(new_posts_found, url)
+                send_email_alert(new_posts_found, url, WEB_PAGE_URL_SUBJECTS[index])
             else:
                 print("No new posts at this time")
 
@@ -150,14 +151,14 @@ def check_new_posts():
         driver.quit()  # Ensure the browser is closed
 
 
-def send_email_alert(new_posts, website_url):
+def send_email_alert(new_posts, website_url, website_subject):
     """
     Sends an email with the list of new posts.
     """
     print("Sending email alert...")
 
     message = MIMEMultipart("alternative")
-    message["Subject"] = "New Civic FD1 Posts Detected"
+    message["Subject"] = "New " + website_subject + " Posts Detected"
     message["From"] = SENDER_EMAIL
     message["To"] = RECEIVER_EMAIL
 
