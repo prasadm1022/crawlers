@@ -43,6 +43,7 @@ RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 WEB_PAGE_URLS = os.getenv("WEB_PAGE_URL").split(",")
 WEB_PAGE_URL_SUBJECTS = os.getenv("WEB_PAGE_URL_SUBJECT").split(",")
 POST_SELECTOR = os.getenv("POST_SELECTOR")
+CRAWLER_FREQUENCY_MINUTES = int(os.getenv("CRAWLER_FREQUENCY_MINUTES"))
 
 # Known Posts CSV File (as an alternative, "SQLite" database can be used)
 KNOWN_POSTS_CSV_FILE = os.getenv("KNOWN_POSTS_CSV_FILE")
@@ -183,8 +184,8 @@ def send_email_alert(new_posts, website_url, website_subject):
 
 
 def main():
-    # Schedule the job to run every hour
-    schedule.every(1).hours.do(check_new_posts)
+    # Schedule the job to run 'x' minutes
+    schedule.every(CRAWLER_FREQUENCY_MINUTES).minutes.do(check_new_posts)
 
     # Run once at startup as well
     check_new_posts()
