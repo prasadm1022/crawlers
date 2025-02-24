@@ -40,7 +40,7 @@ SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")  # Use app-specific password if u
 RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
 
 # Crawler Settings
-WEB_PAGE_URL = os.getenv("WEB_PAGE_URL")
+WEB_PAGE_URLS = os.getenv("WEB_PAGE_URL").split(",")
 POST_SELECTOR = os.getenv("POST_SELECTOR")
 
 # Known Posts CSV File (as an alternative, "SQLite" database can be used)
@@ -107,39 +107,42 @@ def check_new_posts():
     """
     print("Checking for new posts...")
 
+    # Initialize WebDriver
+    driver = setup_driver()
+
     try:
-        # Initialize WebDriver
-        driver = setup_driver()
+        for url in WEB_PAGE_URLS:
+            print(f"Checking website: {url}")
 
-        # Open the page
-        driver.get(WEB_PAGE_URL)
-        # time.sleep(5)  # Allow time for JavaScript content to load
+            # Open the page
+            driver = setup_driver()
+            driver.get(url.strip())
+            time.sleep(3)  # Allow time for JavaScript content to load
 
-        # Extract posts using Selenium
-        posts = driver.find_elements(By.CLASS_NAME, POST_SELECTOR)
+            # Extract posts using Selenium
+            posts = driver.find_elements(By.CLASS_NAME, POST_SELECTOR)
+            if not posts:
+                print("No posts found or the structure may have changed...")
+                continue
 
-        if not posts:
-            print("No posts found or the structure may have changed...")
-            return
+            known_posts = get_known_posts()
+            new_posts_found = []
 
-        known_posts = get_known_posts()
-        new_posts_found = []
+            for post in posts:
+                link_tag = post.find_element(By.TAG_NAME, "a")
+                post_title = link_tag.text.strip()
+                post_link = link_tag.get_attribute("href")
 
-        for post in posts:
-            link_tag = post.find_element(By.TAG_NAME, "a")
-            post_title = link_tag.text.strip()
-            post_link = link_tag.get_attribute("href")
+                unique_id = post_link.strip()
+                if unique_id not in known_posts:
+                    new_posts_found.append((unique_id, post_title))
 
-            unique_id = post_link.strip()
-            if unique_id not in known_posts:
-                new_posts_found.append((unique_id, post_title))
-
-        if new_posts_found:
-            print(f"Found {len(new_posts_found)} new post(s)")
-            save_new_posts(new_posts_found)
-            send_email_alert(new_posts_found)
-        else:
-            print("No new posts at this time")
+            if new_posts_found:
+                print(f"Found {len(new_posts_found)} new post(s)")
+                save_new_posts(new_posts_found)
+                send_email_alert(new_posts_found, url)
+            else:
+                print("No new posts at this time")
 
     except Exception as e:
         print(f"Error during crawling: {e}")
@@ -147,7 +150,7 @@ def check_new_posts():
         driver.quit()  # Ensure the browser is closed
 
 
-def send_email_alert(new_posts):
+def send_email_alert(new_posts, website_url):
     """
     Sends an email with the list of new posts.
     """
@@ -159,7 +162,7 @@ def send_email_alert(new_posts):
     message["To"] = RECEIVER_EMAIL
 
     # Create the HTML body for the email
-    html_body = "<h3>New posts found on riyasewana.com</h3><ul>"
+    html_body = f"<h3>New posts found on <a href='{website_url}'>{website_url}</a></h3><ul>"
     for link, title in new_posts:
         html_body += f"<li><a href='{link}'>{title}</a></li>"
     html_body += "</ul>"
@@ -173,9 +176,9 @@ def send_email_alert(new_posts):
         try:
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, message.as_string())
-            print("Email sent successfully.")
+            print(f"Email sent successfully for {website_url}.")
         except Exception as e:
-            print(f"Error sending email: {e}")
+            print(f"Error sending email for {website_url}: {e}")
 
 
 def main():
