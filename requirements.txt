@@ -1,4 +1,4 @@
-schedule~=1.2.2
-selenium~=4.29.0
+psutil~=7.0.0
 dotenv~=0.9.9
 python-dotenv~=1.0.1
+selenium~=4.29.0
