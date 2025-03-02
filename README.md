@@ -1,6 +1,6 @@
-# crawlers
+# web scrapers
 
-web crawlers for day to day tasks...
+web scrapers for day to day tasks...
 
 1. **Riyasewana.com Ad Alerts**
     - This is a Python-based web scraper that monitors riyasewana.com for new vehicle listings and sends email alerts

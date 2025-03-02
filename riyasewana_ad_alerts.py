@@ -19,6 +19,7 @@ import sqlite3
 import ssl
 import time
 import psutil
+import logging
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -36,34 +37,42 @@ load_dotenv()
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")  # Use app-specific password if using Gmail
 RECEIVER_EMAIL = os.getenv("RECEIVER_EMAIL")
-
-# Crawler Settings
+# Scraper Settings
 WEB_PAGE_URLS = os.getenv("WEB_PAGE_URL").split(",")
 WEB_PAGE_URL_SUBJECTS = os.getenv("WEB_PAGE_URL_SUBJECT").split(",")
 POST_SELECTOR = os.getenv("POST_SELECTOR")
-CRAWLER_FREQUENCY_MINUTES = int(os.getenv("CRAWLER_FREQUENCY_MINUTES"))
-
+SCRAPER_FREQUENCY_MINUTES = int(os.getenv("SCRAPER_FREQUENCY_MINUTES"))
 # SQLite DB to store known posts
-KNOWN_POSTS_DATABASE = "known_posts.db"
+KNOWN_POSTS_DATABASE = "riyasewana_ad_alerts.db"
+
+# Configure logger to print to both console and file
+log_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+# Log file handler (saves to file)
+file_handler = logging.FileHandler("riyasewana_ad_alerts.log")
+file_handler.setLevel(logging.INFO)
+file_handler.setFormatter(log_formatter)
+# Log console handler (prints in terminal)
+console_handler = logging.StreamHandler()
+console_handler.setLevel(logging.INFO)
+console_handler.setFormatter(log_formatter)
+# Configure the root logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(file_handler)
+logger.addHandler(console_handler)
 
 
 def get_available_threads():
     """
     Get the number of available CPU threads
     """
-    print("getting available threads...")
+    logger.info("getting available cpu threads...")
 
-    # Get total CPU cores, fallback to 1 if none is available
-    total_cores = os.cpu_count() or 1
-    print(f"total cores = {total_cores}")
+    total_cores = os.cpu_count()  # Get total CPU cores
+    cpu_usage = psutil.cpu_percent(interval=1, percpu=True)  # CPU usage per core
+    idle_cores = sum(1 for usage in cpu_usage if usage < 20)  # Count idle cores (<20% usage)
 
-    # CPU usage per core
-    cpu_usage = psutil.cpu_percent(interval=1, percpu=True)
-    print(f"cpu usage = {cpu_usage}")
-
-    # Count idle cores (<10% usage)
-    idle_cores = sum(1 for usage in cpu_usage if usage < 10)
-    print(f"available cores = {idle_cores}")
+    logger.info(f"\nusage={cpu_usage}\ntotal={total_cores}\navailable={idle_cores}")
 
     # Fallback to 1 if none is available
     return max(1, idle_cores)
@@ -73,7 +82,8 @@ def setup_database():
     """
     Initialize SQLite database for storing known posts.
     """
-    print("setup SQLite database...")
+    logger.info("setup SQLite database...")
+
     try:
         with sqlite3.connect(KNOWN_POSTS_DATABASE) as conn:
             cursor = conn.cursor()
@@ -91,16 +101,19 @@ def setup_driver():
     """
     Set up the Selenium WebDriver with popup blocking.
     """
-    print("setup selenium driver...")
+    logger.info("setup selenium driver...")
+
     try:
         chrome_options = Options()
 
         chrome_options.add_argument("--headless")  # Run without opening a window
+        chrome_options.add_argument("--no-sandbox")  # Avoid issues in some environments
         chrome_options.add_argument("--disable-popup-blocking")  # Block popups
         chrome_options.add_argument("--disable-notifications")  # Block notifications
         chrome_options.add_argument("--disable-javascript")  # Optional: Disable JavaScript if not needed
-        chrome_options.add_argument("--no-sandbox")  # Avoid issues in some environments
+        chrome_options.add_argument("--disable-gpu")  # Disable GPU rendering
         chrome_options.add_argument("--disable-dev-shm-usage")  # Prevent crashes in Docker/Linux
+        chrome_options.add_argument("--disable-blink-features=AutomationControlled")  # Avoid bot detection
 
         # Block JavaScript, images, popups, and ads
         prefs = {
@@ -122,7 +135,8 @@ def get_known_posts():
     """
     Retrieve known posts from SQLite database.
     """
-    print("retrieving known posts from database...")
+    logger.info("retrieving known posts from database...")
+
     try:
         with sqlite3.connect(KNOWN_POSTS_DATABASE) as conn:
             cursor = conn.cursor()
@@ -136,7 +150,8 @@ def save_new_posts(new_posts):
     """
     Save new posts to SQLite database.
     """
-    print("saving new posts to database...")
+    logger.info("saving new posts to database...")
+
     try:
         with sqlite3.connect(KNOWN_POSTS_DATABASE) as conn:
             cursor = conn.cursor()
@@ -150,18 +165,17 @@ def check_new_posts(new_posts, known_posts, website_url, website_subject):
     """
     Fetch webpage using Selenium, check for new posts, and send alerts.
     """
-    print(f"{website_subject} :: checking new posts...")
+    logger.info(f"{website_subject} :: checking new posts...")
 
     # Initialize WebDriver
     try:
         driver = setup_driver()
     except Exception as e:
-        print(f"{website_subject} :: {e}")
+        logger.error(f"{website_subject} :: {e}")
         return
 
     try:
-        # Open the page
-        driver.get(website_url.strip())
+        driver.get(website_url.strip())  # Open the page
 
         # Wait until posts are loaded
         try:
@@ -184,22 +198,22 @@ def check_new_posts(new_posts, known_posts, website_url, website_subject):
                 continue
 
         if found_posts:
-            print(f"{website_subject} :: found {len(found_posts)} new post(s)")
+            logger.info(f"{website_subject} :: found {len(found_posts)} new post(s)")
             new_posts[website_subject] = (website_url, found_posts)
         else:
             raise Exception("no posts found")
     except Exception as e:
-        print(f"{website_subject} :: {e}")
+        logger.error(f"{website_subject} :: {e}")
     finally:
-        # Quit WebDriver
-        driver.quit()
+        driver.quit()  # Quit WebDriver
 
 
 def send_email_alert(new_posts):
     """
     Sends an email with the list of new posts.
     """
-    print("sending email alert...")
+    logger.info("sending email alert...")
+
     try:
         message = MIMEMultipart("alternative")
         message["Subject"] = "Riyasewana Posts Alert"
@@ -219,7 +233,7 @@ def send_email_alert(new_posts):
             with smtplib.SMTP_SSL("smtp.gmail.com", 465, context=context) as server:
                 server.login(SENDER_EMAIL, SENDER_PASSWORD)
                 server.sendmail(SENDER_EMAIL, RECEIVER_EMAIL, message.as_string())
-            print("email sent successfully")
+            logger.info("email sent successfully")
         except Exception as e:
             raise Exception(f"{e}")
     except Exception as e:
@@ -230,11 +244,9 @@ def run_parallel_scraping():
     """
     Run web scraping in parallel using threading.
     """
-    print("starting scrape process...")
+    logger.info("starting scrape process...")
 
-    # Get known posts
-    known_posts = get_known_posts()
-
+    known_posts = get_known_posts()  # Get known posts
     new_posts = {}
 
     # Scraping & wait for results
@@ -247,28 +259,25 @@ def run_parallel_scraping():
             future.result()  # Wait for completion
 
     if new_posts:
-        # Save new posts
-        save_new_posts([post for _, posts in new_posts.values() for post in posts])
-        # Send email alert for new posts
-        send_email_alert(new_posts)
+        save_new_posts([post for _, posts in new_posts.values() for post in posts])  # Save new posts
+        send_email_alert(new_posts)  # Send email alert for new posts
     else:
-        print("no new posts at this time")
+        logger.info("no new posts at this time")
 
 
 def main():
     try:
-        # Setup database
-        setup_database()
+        setup_database()  # Setup database
 
         # Run scraper at the defined frequency
         while True:
             try:
                 run_parallel_scraping()
-                time.sleep(CRAWLER_FREQUENCY_MINUTES * 60)
+                time.sleep(SCRAPER_FREQUENCY_MINUTES * 60)
             except Exception as e:
-                print(f"{e}")
+                logger.error(f"{e}")
     except KeyboardInterrupt:
-        print("Stopping the scraper...")
+        logger.warning("Stopping the scraper...")
 
 
 if __name__ == "__main__":
